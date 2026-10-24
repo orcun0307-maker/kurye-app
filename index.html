@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="tr" class="h-full bg-slate-900 text-slate-100">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kurye & Teslimat Yönetim Sistemi</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Leaflet CSS & JS for OpenStreetMap -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .leaflet-popup-content-wrapper, .leaflet-popup-tip {
+            background-color: #1e293b !important;
+            color: #f8fafc !important;
+            border: 1px solid #334155;
+            border-radius: 0.5rem;
+        }
+        .leaflet-container {
+            font-family: 'Inter', sans-serif !important;
+        }
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+    </style>
+</head>
+<body class="h-full flex flex-col overflow-hidden select-none">
+
+    <!-- Top Navigation Header -->
+    <header class="bg-slate-800 border-b border-slate-700 px-4 py-3 flex items-center justify-between shrink-0">
+        <div class="flex items-center space-x-3">
+            <div class="bg-indigo-600 text-white p-2 rounded-lg">
+                <i class="fa-solid fa-truck-fast text-xl"></i>
+            </div>
+            <div>
+                <h1 class="font-bold text-lg leading-tight">Kurye Express Pro</h1>
+                <p class="text-xs text-slate-400">Canlı Kurye & Teslimat Yönetimi</p>
+            </div>
+        </div>
+
+        <!-- Quick Live Simulation & GPS Controls -->
+        <div class="flex items-center space-x-3">
+            <button id="gpsBtn" onclick="toggleMyGPS()" class="bg-slate-700 hover:bg-slate-600 text-slate-200 px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition border border-slate-600">
+                <i class="fa-solid fa-location-crosshairs text-indigo-400" id="gpsIcon"></i>
+                <span id="gpsBtnText">Canlı Konumumu Paylaş</span>
+            </button>
+            <button id="simBtn" onclick="toggleSimulation()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition shadow-lg shadow-emerald-900/30">
+                <i class="fa-solid fa-play" id="simIcon"></i>
+                <span id="simBtnText">Simülasyonu Başlat</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Dashboard Quick Stats Bar -->
+    <div class="bg-slate-800/50 border-b border-slate-700/60 px-4 py-2 grid grid-cols-2 md:grid-cols-4 gap-3 text-xs shrink-0">
+        <div class="flex items-center justify-between bg-slate-800/80 p-2.5 rounded-lg border border-slate-700">
+            <div>
+                <p class="text-slate-400 font-medium">Toplama Sipariş</p>
+                <p class="text-lg font-bold text-white mt-0.5" id="statTotalOrders">0</p>
+            </div>
+            <i class="fa-solid fa-box text-indigo-400 text-xl opacity-80"></i>
+        </div>
+        <div class="flex items-center justify-between bg-slate-800/80 p-2.5 rounded-lg border border-slate-700">
+            <div>
+                <p class="text-slate-400 font-medium">Bekleyen Siparişler</p>
+                <p class="text-lg font-bold text-amber-400 mt-0.5" id="statPendingOrders">0</p>
+            </div>
+            <i class="fa-solid fa-clock text-amber-400 text-xl opacity-80"></i>
+        </div>
+        <div class="flex items-center justify-between bg-slate-800/80 p-2.5 rounded-lg border border-slate-700">
+            <div>
+                <p class="text-slate-400 font-medium">Aktif Kuryeler</p>
+                <p class="text-lg font-bold text-emerald-400 mt-0.5" id="statActiveCouriers">0</p>
+            </div>
+            <i class="fa-solid fa-motorcycle text-emerald-400 text-xl opacity-80"></i>
+        </div>
+        <div class="flex items-center justify-between bg-slate-800/80 p-2.5 rounded-lg border border-slate-700">
+            <div>
+                <p class="text-slate-400 font-medium">Bugün Teslim Edilen</p>
+                <p class="text-lg font-bold text-blue-400 mt-0.5" id="statDeliveredOrders">0</p>
+            </div>
+            <i class="fa-solid fa-circle-check text-blue-400 text-xl opacity-80"></i>
+        </div>
+    </div>
+
+    <!-- Main Workspace Container -->
+    <div class="flex-1 flex flex-col md:flex-row overflow-hidden relative">
+        
+        <!-- Sidebar Navigation & Content Panel -->
+        <div class="w-full md:w-96 bg-slate-800 border-r border-slate-700 flex flex-col shrink-0 z-10 h-1/2 md:h-full">
+            
+            <!-- Sidebar Navigation Tabs -->
+            <div class="flex border-b border-slate-700 bg-slate-900/50 p-1 gap-1 text-xs font-medium">
+                <button onclick="switchTab('orders')" id="tabBtnOrders" class="flex-1 py-2 rounded-md transition text-slate-300 hover:text-white flex items-center justify-center gap-1.5 bg-slate-800 text-indigo-400 font-semibold shadow">
+                    <i class="fa-solid fa-boxes-stacked"></i> Siparişler
+                </button>
+                <button onclick="switchTab('couriers')" id="tabBtnCouriers" class="flex-1 py-2 rounded-md transition text-slate-400 hover:text-slate-200 flex items-center justify-center gap-1.5">
+                    <i class="fa-solid fa-user-ninja"></i> Kuryeler
+                </button>
+                <button onclick="switchTab('new-order')" id="tabBtnNewOrder" class="flex-1 py-2 rounded-md transition text-slate-400 hover:text-slate-200 flex items-center justify-center gap-1.5">
+                    <i class="fa-solid fa-plus-circle"></i> Yeni Ekle
+                </button>
+            </div>
+
+            <!-- TAB 1: ORDERS LIST -->
+            <div id="tabOrders" class="flex-1 flex flex-col p-3 overflow-hidden">
+                <!-- Search & Filters -->
+                <div class="flex gap-2 mb-3">
+                    <div class="relative flex-1">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-500 text-xs"></i>
+                        <input type="text" id="orderSearch" oninput="renderOrders()" placeholder="Sipariş ara..." class="w-full bg-slate-900 text-slate-200 text-xs pl-8 pr-3 py-2 rounded-lg border border-slate-700 focus:outline-none focus:border-indigo-500">
+                    </div>
+                    <select id="orderFilter" onchange="renderOrders()" class="bg-slate-900 text-slate-200 text-xs px-2 py-2 rounded-lg border border-slate-700 focus:outline-none focus:border-indigo-500">
+                        <option value="ALL">Tümü</option>
+                        <option value="PENDING">Bekliyor</option>
+                        <option value="ON_THE_WAY">Yolda</option>
+                        <option value="DELIVERED">Teslim Edildi</option>
+                    </select>
+                </div>
+
+                <!-- Scrollable Order Items -->
+                <div id="ordersList" class="flex-1 overflow-y-auto space-y-2 pr-1">
+                    <!-- Dynamic Orders Items Inserted Here -->
+                </div>
+            </div>
+
+            <!-- TAB 2: COURIERS LIST -->
+            <div id="tabCouriers" class="flex-1 flex flex-col p-3 overflow-hidden hidden">
+                <div class="flex justify-between items-center mb-3">
+                    <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Kurye Listesi</h3>
+                    <button onclick="toggleCourierModal(true)" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs px-2.5 py-1 rounded-md transition flex items-center gap-1">
+                        <i class="fa-solid fa-plus"></i> Kurye Ekle
+                    </button>
+                </div>
+                <div id="couriersList" class="flex-1 overflow-y-auto space-y-2 pr-1">
+                    <!-- Dynamic Courier Cards Inserted Here -->
+                </div>
+            </div>
+
+            <!-- TAB 3: NEW ORDER FORM -->
+            <div id="tabNewOrder" class="flex-1 flex flex-col p-3 overflow-y-auto hidden">
+                <h3 class="text-sm font-semibold text-slate-200 mb-3 border-b border-slate-700 pb-2">Yeni Teslimat Oluştur</h3>
+                <form id="addOrderForm" onsubmit="handleCreateOrder(event)" class="space-y-3 text-xs">
+                    <div>
+                        <label class="block text-slate-400 mb-1">Müşteri Adı Soyadı</label>
+                        <input type="text" id="custName" required placeholder="Örn: Ahmet Yılmaz" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-200 focus:border-indigo-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-slate-400 mb-1">Teslimat Adresi</label>
+                        <input type="text" id="custAddress" required placeholder="Örn: Kadıköy Moda Cad. No:12" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-200 focus:border-indigo-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-slate-400 mb-1">Sipariş İçeriği / Paket Tanımı</label>
+                        <input type="text" id="orderItems" required placeholder="Örn: 2x Pizza, 1x İçecek" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-200 focus:border-indigo-500 focus:outline-none">
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="block text-slate-400 mb-1">Enlem (Lat)</label>
+                            <input type="number" step="any" id="destLat" required placeholder="41.0082" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-200 focus:border-indigo-500 focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-slate-400 mb-1">Boylam (Lng)</label>
+                            <input type="number" step="any" id="destLng" required placeholder="28.9784" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-200 focus:border-indigo-500 focus:outline-none">
+                        </div>
+                    </div>
+                    <button type="button" onclick="enableMapPicker()" id="mapPickerBtn" class="w-full bg-slate-700 hover:bg-slate-600 border border-slate-600 text-indigo-300 py-2 rounded-lg font-medium transition flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-map-pin"></i> Haritadan Konum Seç
+                    </button>
+                    <div>
+                        <label class="block text-slate-400 mb-1">Kurye Ata (Opsiyonel)</label>
+                        <select id="assignCourierSelect" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-200 focus:border-indigo-500 focus:outline-none">
+                            <option value="">Atanmadı (Bekliyor)</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2.5 rounded-lg transition shadow-lg shadow-indigo-900/30">
+                        Siparişi Kaydet ve Oluştur
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Interactive Leaflet Map Container -->
+        <div class="flex-1 h-1/2 md:h-full relative bg-slate-950">
+            <div id="map" class="w-full h-full"></div>
+            
+            <!-- Map Toast Info Overlay -->
+            <div id="mapInfoToast" class="absolute bottom-4 right-4 bg-slate-800/90 backdrop-blur border border-slate-700 px-3 py-2 rounded-lg shadow-xl text-xs text-slate-300 z-[1000] hidden flex items-center gap-2">
+                <i class="fa-solid fa-circle-info text-indigo-400"></i>
+                <span id="mapInfoToastText">Haritada teslimat noktasını belirlemek için bir yere tıklayın.</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Add Courier -->
+    <div id="courierModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[2000] flex items-center justify-center hidden">
+        <div class="bg-slate-800 border border-slate-700 rounded-xl p-5 w-full max-w-md mx-4 shadow-2xl">
+            <div class="flex justify-between items-center mb-4 border-b border-slate-700 pb-2">
+                <h3 class="font-bold text-slate-100 text-base">Yeni Kurye Ekle</h3>
+                <button onclick="toggleCourierModal(false)" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <form onsubmit="handleCreateCourier(event)" class="space-y-3 text-xs">
+                <div>
+                    <label class="block text-slate-400 mb-1">Kurye Adı Soyadı</label>
+                    <input type="text" id="courierName" required placeholder="Örn: Mehmet Demir" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-indigo-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-slate-400 mb-1">Telefon Numarası</label>
+                    <input type="tel" id="courierPhone" required placeholder="0555 123 45 67" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-indigo-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-slate-400 mb-1">Araç Tipi</label>
+                    <select id="courierVehicle" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-slate-200 focus:border-indigo-500 focus:outline-none">
+                        <option value="MOTORBIKE">Motosiklet</option>
+                        <option value="CAR">Otomobil</option>
+                        <option value="BICYCLE">Bisiklet</option>
+                    </select>
+                </div>
+                <div class="pt-2 flex justify-end gap-2">
+                    <button type="button" onclick="toggleCourierModal(false)" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-slate-200 font-medium transition">İptal</button>
+                    <button type="submit" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-medium transition">Kaydet</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Application Script -->
+    <script>
+        // --- INITIAL STATE & SAMPLE DATA (Istanbul Focus) ---
+        let couriers = [
+            { id: 'c1', name: 'Ali Yılmaz', phone: '0532 111 2233', vehicle: 'MOTORBIKE', status: 'ACTIVE', lat: 41.025, lng: 28.975 },
+            { id: 'c2', name: 'Canan Kaya', phone: '0544 222 3344', vehicle: 'CAR', status: 'BUSY', lat: 41.012, lng: 28.988 },
+            { id: 'c3', name: 'Burak Demir', phone: '0555 333 4455', vehicle: 'BICYCLE', status: 'ACTIVE', lat: 41.035, lng: 28.980 }
+        ];
+
+        let orders = [
+            { id: 'ORD-101', customer: 'Ayşe Tekin', address: 'Beyoğlu, İstiklal Cad. No:45', items: 'Sıcak Yemek Paket', lat: 41.0330, lng: 28.9778, status: 'ON_THE_WAY', courierId: 'c1' },
+            { id: 'ORD-102', customer: 'Mehmet Öz', address: 'Karaköy, Rıhtım Cad. No:12', items: 'Elektronik Belge', lat: 41.0220, lng: 28.9790, status: 'PENDING', courierId: null },
+            { id: 'ORD-103', customer: 'Zeynep Şahin', address: 'Şişli, Halaskargazi Cad. No:88', items: 'Giyim Siparişi', lat: 41.0500, lng: 28.9870, status: 'DELIVERED', courierId: 'c2' }
+        ];
+
+        let map, markers = {}, polyLines = {};
+        let isSimulationRunning = false;
+        let simulationInterval = null;
+        let isPickingLocation = false;
+        let myGpsWatchId = null;
+
+        // Icons mapping for vehicle types
+        const vehicleIcons = {
+            MOTORBIKE: 'fa-motorcycle',
+            CAR: 'fa-car',
+            BICYCLE: 'fa-bicycle'
+        };
+
+        // --- MAP INITIALIZATION ---
+        function initMap() {
+            // Centered near Istanbul Center
+            map = L.map('map', { zoomControl: false }).setView([41.028, 28.980], 13);
+
+            // Dark Mode Map Tile (CartoDB Dark Matter)
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/">CARTO</a>',
+                maxZoom: 19
+            }).addTo(map);
+
+            // Re-add Zoom control to top-right
+            L.control.zoom({ position: 'topright' }).addTo(map);
+
+            // Map click handler for location picking
+            map.on('click', function(e) {
+                if (isPickingLocation) {
+                    document.getElementById('destLat').value = e.latlng.lat.toFixed(6);
+                    document.getElementById('destLng').value = e.latlng.lng.toFixed(6);
+                    showToast("Konum seçildi!");
+                    isPickingLocation = false;
+                    document.getElementById('mapPickerBtn').classList.remove('bg-indigo-600', 'text-white');
+                    document.getElementById('mapPickerBtn').classList.add('bg-slate-700', 'text-indigo-300');
+                }
+            });
+
+            renderAllOnMap();
+        }
+
+        // --- RENDER FUNCTIONS ---
+        function updateDashboardStats() {
+            document.getElementById('statTotalOrders').innerText = orders.length;
+            document.getElementById('statPendingOrders').innerText = orders.filter(o => o.status === 'PENDING').length;
+            document.getElementById('statActiveCouriers').innerText = couriers.filter(c => c.status !== 'OFFLINE').length;
+            document.getElementById('statDeliveredOrders').innerText = orders.filter(o => o.status === 'DELIVERED').length;
+        }
+
+        function renderOrders() {
+            const listEl = document.getElementById('ordersList');
+            const searchVal = document.getElementById('orderSearch').value.toLowerCase();
+            const filterVal = document.getElementById('orderFilter').value;
+
+            listEl.innerHTML = '';
+
+            const filteredOrders = orders.filter(order => {
+                const matchesSearch = order.customer.toLowerCase().includes(searchVal) || 
+                                      order.id.toLowerCase().includes(searchVal) || 
+                                      order.address.toLowerCase().includes(searchVal);
+                const matchesFilter = filterVal === 'ALL' || order.status === filterVal;
+                return matchesSearch && matchesFilter;
+            });
+
+            if (filteredOrders.length === 0) {
+                listEl.innerHTML = `<div class="text-center py-8 text-slate-500 text-xs">Sipariş bulunamadı.</div>`;
+                return;
+            }
+
+            filteredOrders.forEach(order => {
+                const assignedCourier = couriers.find(c => c.id === order.courierId);
+                
+                let badgeColor = 'bg-amber-500/20 text-amber-400 border-amber-500/30';
+                let statusText = 'Bekliyor';
+                if (order.status === 'ON_THE_WAY') {
+                    badgeColor = 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30';
+                    statusText = 'Yolda';
+                } else if (order.status === 'DELIVERED') {
+                    badgeColor = 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
+                    statusText = 'Teslim Edildi';
+                }
+
+                const card = document.createElement('div');
+                card.className = 'bg-slate-900 border border-slate-700/80 rounded-lg p-3 hover:border-slate-600 transition text-xs space-y-2';
+                card.innerHTML = `
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <span class="font-mono font-bold text-slate-300">${order.id}</span>
+                            <h4 class="font-semibold text-slate-100 text-sm mt-0.5">${order.customer}</h4>
+                        </div>
+                        <span class="px-2 py-0.5 rounded border ${badgeColor} font-semibold text-[10px]">${statusText}</span>
+                    </div>
+                    <p class="text-slate-400 text-[11px]"><i class="fa-solid fa-location-dot text-rose-400 mr-1"></i>${order.address}</p>
+                    <p class="text-slate-400 text-[11px]"><i class="fa-solid fa-box text-indigo-400 mr-1"></i>${order.items}</p>
+                    
+                    <div class="pt-2 border-t border-slate-800 flex items-center justify-between gap-2">
+                        <select onchange="assignCourier('${order.id}', this.value)" class="bg-slate-800 text-slate-300 text-[11px] border border-slate-700 rounded px-2 py-1 focus:outline-none flex-1">
+                            <option value="">Kurye Ata</option>
+                            ${couriers.map(c => `<option value="${c.id}" ${order.courierId === c.id ? 'selected' : ''}>${c.name}</option>`).join('')}
+                        </select>
+                        <select onchange="updateOrderStatus('${order.id}', this.value)" class="bg-slate-800 text-slate-300 text-[11px] border border-slate-700 rounded px-2 py-1 focus:outline-none">
+                            <option value="PENDING" ${order.status === 'PENDING' ? 'selected' : ''}>Bekliyor</option>
+                            <option value="ON_THE_WAY" ${order.status === 'ON_THE_WAY' ? 'selected' : ''}>Yolda</option>
+                            <option value="DELIVERED" ${order.status === 'DELIVERED' ? 'selected' : ''}>Teslim Edildi</option>
+                        </select>
+                        <button onclick="focusMapOn(${order.lat}, ${order.lng})" class="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-700" title="Haritada Gör">
+                            <i class="fa-solid fa-crosshairs"></i>
+                        </button>
+                    </div>
+                `;
+                listEl.appendChild(card);
+            });
+        }
+
+        function renderCouriers() {
+            const listEl = document.getElementById('couriersList');
+            const selectEl = document.getElementById('assignCourierSelect');
+            
+            listEl.innerHTML = '';
+            selectEl.innerHTML = '<option value="">Atanmadı (Bekliyor)</option>';
+
+            couriers.forEach(courier => {
+                // Populate Assign Dropdown
+                const opt = document.createElement('option');
+                opt.value = courier.id;
+                opt.innerText = courier.name;
+                selectEl.appendChild(opt);
+
+                let statusColor = courier.status === 'ACTIVE' ? 'text-emerald-400' : (courier.status === 'BUSY' ? 'text-amber-400' : 'text-slate-500');
+                let statusLabel = courier.status === 'ACTIVE' ? 'Uygun' : (courier.status === 'BUSY' ? 'Meşgul' : 'Çevrimdışı');
+
+                const activeOrder = orders.find(o => o.courierId === courier.id && o.status === 'ON_THE_WAY');
+
+                const card = document.createElement('div');
+                card.className = 'bg-slate-900 border border-slate-700/80 rounded-lg p-3 hover:border-slate-600 transition text-xs space-y-2';
+                card.innerHTML = `
+                    <div class="flex justify-between items-center">
+                        <div class="flex items-center gap-2">
+                            <div class="w-8 h-8 rounded-full bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 flex items-center justify-center">
+                                <i class="fa-solid ${vehicleIcons[courier.vehicle]}"></i>
+                            </div>
+                            <div>
+                                <h4 class="font-bold text-slate-200">${courier.name}</h4>
+                                <span class="text-[10px] ${statusColor} font-medium"><i class="fa-solid fa-circle text-[6px] mr-1"></i>${statusLabel}</span>
+                            </div>
+                        </div>
+                        <button onclick="focusMapOn(${courier.lat}, ${courier.lng})" class="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-700" title="Kuryeyi Takip Et">
+                            <i class="fa-solid fa-location-crosshairs"></i>
+                        </button>
+                    </div>
+                    <p class="text-slate-400 text-[11px]"><i class="fa-solid fa-phone mr-1"></i>${courier.phone}</p>
+                    ${activeOrder ? `<div class="bg-slate-800 p-2 rounded border border-slate-700/50 text-[11px] text-slate-300">
+                        <i class="fa-solid fa-route text-indigo-400 mr-1"></i> Aktif Görev: <strong>${activeOrder.id}</strong>
+                    </div>` : ''}
+                `;
+                listEl.appendChild(card);
+            });
+        }
+
+        // --- MAP MARKERS & LINES ---
+        function renderAllOnMap() {
+            // Clear existing markers & lines
+            Object.keys(markers).forEach(k => map.removeLayer(markers[k]));
+            Object.keys(polyLines).forEach(k => map.removeLayer(polyLines[k]));
+            markers = {};
+            polyLines = {};
+
+            // Render Orders Pins
+            orders.forEach(order => {
+                if (order.status === 'DELIVERED') return; // Hide completed orders from map if needed
+
+                const orderIcon = L.divIcon({
+                    className: 'custom-div-icon',
+                    html: `<div style="background-color: #f43f5e; color: white; width: 28px; height: 28px; rounded; display: flex; align-items: center; justify-content: center; border-radius: 50%; border: 2px solid white; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
+                            <i class="fa-solid fa-box" style="font-size: 12px;"></i>
+                           </div>`,
+                    iconSize: [28, 28],
+                    iconAnchor: [14, 14]
+                });
+
+                const m = L.marker([order.lat, order.lng], { icon: orderIcon }).addTo(map);
+                m.bindPopup(`
+                    <div class="text-xs space-y-1">
+                        <p class="font-bold text-rose-400">${order.id} - ${order.customer}</p>
+                        <p class="text-slate-300">${order.address}</p>
+                        <p class="text-slate-400">İçerik: ${order.items}</p>
+                        <p class="text-slate-400">Durum: <strong>${order.status}</strong></p>
+                    </div>
+                `);
+                markers[`order_${order.id}`] = m;
+            });
+
+            // Render Couriers Pins & Route Lines
+            couriers.forEach(courier => {
+                const courierIcon = L.divIcon({
+                    className: 'custom-div-icon',
+                    html: `<div style="background-color: #10b981; color: white; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 50%; border: 2px solid white; box-shadow: 0 4px 10px rgba(0,0,0,0.5);">
+                            <i class="fa-solid ${vehicleIcons[courier.vehicle]}" style="font-size: 14px;"></i>
+                           </div>`,
+                    iconSize: [32, 32],
+                    iconAnchor: [16, 16]
+                });
+
+                const m = L.marker([courier.lat, courier.lng], { icon: courierIcon }).addTo(map);
+                m.bindPopup(`
+                    <div class="text-xs space-y-1">
+                        <p class="font-bold text-emerald-400">${courier.name}</p>
+                        <p class="text-slate-300">Tel: ${courier.phone}</p>
+                        <p class="text-slate-400">Araç: ${courier.vehicle}</p>
+                    </div>
+                `);
+                markers[`courier_${courier.id}`] = m;
+
+                // Draw connecting line if courier has active order
+                const activeOrder = orders.find(o => o.courierId === courier.id && o.status === 'ON_THE_WAY');
+                if (activeOrder) {
+                    const line = L.polyline([
+                        [courier.lat, courier.lng],
+                        [activeOrder.lat, activeOrder.lng]
+                    ], { color: '#6366f1', weight: 3, dashArray: '6, 8', opacity: 0.8 }).addTo(map);
+                    polyLines[`line_${courier.id}`] = line;
+                }
+            });
+        }
+
+        // --- ACTIONS & LOGIC ---
+        function switchTab(tabName) {
+            document.getElementById('tabOrders').classList.add('hidden');
+            document.getElementById('tabCouriers').classList.add('hidden');
+            document.getElementById('tabNewOrder').classList.add('hidden');
+
+            document.getElementById('tabBtnOrders').className = "flex-1 py-2 rounded-md transition text-slate-400 hover:text-slate-200 flex items-center justify-center gap-1.5";
+            document.getElementById('tabBtnCouriers').className = "flex-1 py-2 rounded-md transition text-slate-400 hover:text-slate-200 flex items-center justify-center gap-1.5";
+            document.getElementById('tabBtnNewOrder').className = "flex-1 py-2 rounded-md transition text-slate-400 hover:text-slate-200 flex items-center justify-center gap-1.5";
+
+            if (tabName === 'orders') {
+                document.getElementById('tabOrders').classList.remove('hidden');
+                document.getElementById('tabBtnOrders').className = "flex-1 py-2 rounded-md transition text-indigo-400 font-semibold bg-slate-800 shadow flex items-center justify-center gap-1.5";
+            } else if (tabName === 'couriers') {
+                document.getElementById('tabCouriers').classList.remove('hidden');
+                document.getElementById('tabBtnCouriers').className = "flex-1 py-2 rounded-md transition text-indigo-400 font-semibold bg-slate-800 shadow flex items-center justify-center gap-1.5";
+            } else if (tabName === 'new-order') {
+                document.getElementById('tabNewOrder').classList.remove('hidden');
+                document.getElementById('tabBtnNewOrder').className = "flex-1 py-2 rounded-md transition text-indigo-400 font-semibold bg-slate-800 shadow flex items-center justify-center gap-1.5";
+            }
+        }
+
+        function focusMapOn(lat, lng) {
+            map.flyTo([lat, lng], 15, { duration: 1.2 });
+        }
+
+        function assignCourier(orderId, courierId) {
+            const order = orders.find(o => o.id === orderId);
+            if (order) {
+                order.courierId = courierId || null;
+                if (courierId && order.status === 'PENDING') {
+                    order.status = 'ON_THE_WAY'; // Auto start
+                }
+                updateAll();
+                showToast("Kurye ataması güncellendi.");
+            }
+        }
+
+        function updateOrderStatus(orderId, newStatus) {
+            const order = orders.find(o => o.id === orderId);
+            if (order) {
+                order.status = newStatus;
+                updateAll();
+                showToast("Sipariş durumu güncellendi.");
+            }
+        }
+
+        function handleCreateOrder(e) {
+            e.preventDefault();
+            const newOrder = {
+                id: 'ORD-' + Math.floor(100 + Math.random() * 900),
+                customer: document.getElementById('custName').value,
+                address: document.getElementById('custAddress').value,
+                items: document.getElementById('orderItems').value,
+                lat: parseFloat(document.getElementById('destLat').value),
+                lng: parseFloat(document.getElementById('destLng').value),
+                status: document.getElementById('assignCourierSelect').value ? 'ON_THE_WAY' : 'PENDING',
+                courierId: document.getElementById('assignCourierSelect').value || null
+            };
+
+            orders.unshift(newOrder);
+            document.getElementById('addOrderForm').reset();
+            switchTab('orders');
+            updateAll();
+            focusMapOn(newOrder.lat, newOrder.lng);
+            showToast("Yeni sipariş başarıyla oluşturuldu.");
+        }
+
+        function handleCreateCourier(e) {
+            e.preventDefault();
+            const newCourier = {
+                id: 'c' + (couriers.length + 1),
+                name: document.getElementById('courierName').value,
+                phone: document.getElementById('courierPhone').value,
+                vehicle: document.getElementById('courierVehicle').value,
+                status: 'ACTIVE',
+                // Default position close to map center with slight offset
+                lat: 41.028 + (Math.random() - 0.5) * 0.02,
+                lng: 28.980 + (Math.random() - 0.5) * 0.02
+            };
+
+            couriers.push(newCourier);
+            toggleCourierModal(false);
+            updateAll();
+            showToast("Yeni kurye sisteme eklendi.");
+        }
+
+        function enableMapPicker() {
+            isPickingLocation = true;
+            const btn = document.getElementById('mapPickerBtn');
+            btn.classList.remove('bg-slate-700', 'text-indigo-300');
+            btn.classList.add('bg-indigo-600', 'text-white');
+            showToast("Harita üzerinde istediğiniz bir noktaya tıklayın.");
+        }
+
+        function toggleCourierModal(show) {
+            const modal = document.getElementById('courierModal');
+            if (show) modal.classList.remove('hidden');
+            else modal.classList.add('hidden');
+        }
+
+        // --- SIMULATION ENGINE ---
+        function toggleSimulation() {
+            isSimulationRunning = !isSimulationRunning;
+            const btnText = document.getElementById('simBtnText');
+            const icon = document.getElementById('simIcon');
+            const btn = document.getElementById('simBtn');
+
+            if (isSimulationRunning) {
+                btnText.innerText = "Simülasyonu Durdur";
+                icon.className = "fa-solid fa-pause";
+                btn.className = "bg-rose-600 hover:bg-rose-500 text-white px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition shadow-lg shadow-rose-900/30";
+                
+                simulationInterval = setInterval(runSimulationStep, 1000);
+                showToast("Canlı simülasyon başlatıldı.");
+            } else {
+                btnText.innerText = "Simülasyonu Başlat";
+                icon.className = "fa-solid fa-play";
+                btn.className = "bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition shadow-lg shadow-emerald-900/30";
+                
+                clearInterval(simulationInterval);
+                showToast("Simülasyon durduruldu.");
+            }
+        }
+
+        function runSimulationStep() {
+            let movedAny = false;
+
+            couriers.forEach(courier => {
+                // Find order assigned to this courier that is ON_THE_WAY
+                const activeOrder = orders.find(o => o.courierId === courier.id && o.status === 'ON_THE_WAY');
+
+                if (activeOrder) {
+                    courier.status = 'BUSY';
+                    // Move step towards target destination
+                    const speed = 0.0005; // Simulation speed step
+                    const deltaLat = activeOrder.lat - courier.lat;
+                    const deltaLng = activeOrder.lng - courier.lng;
+                    const distance = Math.sqrt(deltaLat * deltaLat + deltaLng * deltaLng);
+
+                    if (distance < 0.0008) {
+                        // Order Delivered
+                        activeOrder.status = 'DELIVERED';
+                        courier.status = 'ACTIVE';
+                        showToast(`${courier.name}, ${activeOrder.id} siparişini teslim etti!`);
+                    } else {
+                        // Step forward
+                        courier.lat += (deltaLat / distance) * speed;
+                        courier.lng += (deltaLng / distance) * speed;
+                        movedAny = true;
+                    }
+                } else {
+                    courier.status = 'ACTIVE';
+                }
+            });
+
+            renderAllOnMap();
+            renderCouriers();
+            renderOrders();
+            updateDashboardStats();
+        }
+
+        // --- REAL BROWSER GEOLOCATION (GPS) ---
+        function toggleMyGPS() {
+            const gpsBtnText = document.getElementById('gpsBtnText');
+            const gpsIcon = document.getElementById('gpsIcon');
+
+            if (myGpsWatchId !== null) {
+                navigator.geolocation.clearWatch(myGpsWatchId);
+                myGpsWatchId = null;
+                gpsBtnText.innerText = "Canlı Konumumu Paylaş";
+                gpsIcon.className = "fa-solid fa-location-crosshairs text-indigo-400";
+                showToast("GPS Takibi durduruldu.");
+            } else {
+                if ("geolocation" in navigator) {
+                    gpsBtnText.innerText = "GPS Bağlanıyor...";
+                    myGpsWatchId = navigator.geolocation.watchPosition(
+                        (position) => {
+                            const { latitude, longitude } = position.coords;
+                            
+                            // Find or create a GPS Courier entity
+                            let myCourier = couriers.find(c => c.id === 'c_gps');
+                            if (!myCourier) {
+                                myCourier = {
+                                    id: 'c_gps',
+                                    name: 'Siz (Canlı GPS)',
+                                    phone: 'Sistem Kuryesi',
+                                    vehicle: 'MOTORBIKE',
+                                    status: 'ACTIVE',
+                                    lat: latitude,
+                                    lng: longitude
+                                };
+                                couriers.push(myCourier);
+                            } else {
+                                myCourier.lat = latitude;
+                                myCourier.lng = longitude;
+                            }
+
+                            gpsBtnText.innerText = "GPS Aktif (Takip Ediliyor)";
+                            gpsIcon.className = "fa-solid fa-satellite-dish text-emerald-400 animate-pulse";
+                            updateAll();
+                            focusMapOn(latitude, longitude);
+                        },
+                        (error) => {
+                            showToast("GPS Erişimi Reddedildi veya Alınamadı.");
+                            gpsBtnText.innerText = "Canlı Konumumu Paylaş";
+                            gpsIcon.className = "fa-solid fa-location-crosshairs text-indigo-400";
+                        },
+                        { enableHighAccuracy: true }
+                    );
+                } else {
+                    showToast("Tarayıcınız GPS konum servislerini desteklemiyor.");
+                }
+            }
+        }
+
+        // Helper Toast Notification
+        function showToast(text) {
+            const toast = document.getElementById('mapInfoToast');
+            document.getElementById('mapInfoToastText').innerText = text;
+            toast.classList.remove('hidden');
+            setTimeout(() => {
+                toast.classList.add('hidden');
+            }, 3500);
+        }
+
+        function updateAll() {
+            updateDashboardStats();
+            renderOrders();
+            renderCouriers();
+            renderAllOnMap();
+        }
+
+        // --- INITIALIZE ON LOAD ---
+        window.onload = function() {
+            initMap();
+            updateAll();
+        };
+    </script>
+</body>
+</html>
